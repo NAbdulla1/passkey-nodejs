@@ -4,6 +4,7 @@ export default (sequelize, DataTypes) => {
   class User extends Model {
     static associate(models) {
       User.hasOne(models.Auth);
+      User.hasMany(models.PassKey, { foreignKey: 'userId', as: 'passKeys' });
     }
   }
   User.init({

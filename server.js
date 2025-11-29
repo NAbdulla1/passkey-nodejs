@@ -1,8 +1,10 @@
+// @ts-check
 import express from 'express';
 import cors from 'cors';
 import { initializeDatabase, closeDatabase } from './db/index.js';
 import { compareSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
+import { generateRegistrationOptions, verifyRegistrationResponse } from '@simplewebauthn/server';
 
 export function createApp(models) {
   const app = express();
@@ -126,7 +128,7 @@ export function createApp(models) {
 
       // Attach the parsed user id to the request for downstream use
       req.userId = userId;
-      const user = await models.User.findOne({ where: { id: userId }});
+      const user = await models.User.findOne({ where: { id: userId } });
       return res.json({ loggedIn: true, user });
     } catch (err) {
       res.clearCookie('session', {
@@ -137,6 +139,101 @@ export function createApp(models) {
       });
       return res.json({ loggedIn: false });
     }
+  });
+
+  app.post('/api/generate-passkey-challenge', async (req, res) => {
+    const email = req.body.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Missing user identifier' });
+    }
+
+    const user = await models.User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const passKeys = await models.PassKey.findAll({ where: { userId: user.id } });
+    const existingCredentials = passKeys.map(passKey => ({
+      id: passKey.credentialId,
+      transports: passKey.credentialTransports,
+    }));
+
+    console.log('Existing Credentials:', existingCredentials);
+
+    const options = await generateRegistrationOptions({
+      rpID: 'localhost',
+      rpName: 'My Passkey App',
+      userName: email,
+      userID: Buffer.from(`${user.id}`),
+      timeout: 60000,
+      userDisplayName: `User: ${user.username}`,
+      attestationType: 'none',
+      authenticatorSelection: {
+        residentKey: 'required',
+        userVerification: 'required',
+        authenticatorAttachment: 'platform',
+      },
+      excludeCredentials: existingCredentials
+    });
+
+    if (!options || !options.challenge) {
+      return res.status(500).json({ error: 'Failed to generate registration options' });
+    }
+
+    const challenge = options.challenge;
+
+    const passKey = await models.PassKey.create({
+      userId: user.id,
+      challenge,
+    });
+
+    return res.json({ passKeyId: passKey.id, userId: user.id, options });
+  });
+
+  app.post('/api/verify-passkey-registration', async (req, res) => {
+    const { passKeyId, userId, attestationResponse, error } = req.body || {};
+
+    // there will be an error if user cancels or tries to create multiple keys
+    if (error) {
+      console.log('Passkey registration error:', error);
+      await models.PassKey.destroy({ where: { id: passKeyId } });
+      return res.json({ error: 'Passkey registration was cancelled or failed' });
+    }
+
+    if (!userId || !attestationResponse || !passKeyId) {
+      return res.status(400).json({ error: 'Missing userId or attestationResponse' });
+    }
+
+    const passKey = await models.PassKey.findByPk(passKeyId);
+    if (!passKey || passKey.userId !== userId) {
+      return res.status(400).json({ error: 'Invalid PassKey record' });
+    }
+
+    const verification = await verifyRegistrationResponse({
+      response: attestationResponse,
+      expectedChallenge: passKey.challenge, // Retrieve the challenge you sent to the client
+      expectedOrigin: 'http://localhost:5173',
+      expectedRPID: 'localhost',
+    });
+
+    if (!verification.verified) {
+      return res.status(400).json({ error: 'Passkey registration verification failed' });
+    }
+
+    const { registrationInfo } = verification;
+
+    const { credential, credentialDeviceType, credentialBackedUp } = registrationInfo;
+
+    await passKey.update({
+      credentialId: credential.id,
+      credentialCounter: credential.counter,
+      credentialPublicKey: Buffer.from(credential.publicKey).toString('base64'),
+      credentialTransports: credential.transports,
+      credentialDeviceType: credentialDeviceType,
+      credentialBackedUp: credentialBackedUp
+    });
+
+    return res.json({ success: true });
   });
 
   // fallback 404 for other routes

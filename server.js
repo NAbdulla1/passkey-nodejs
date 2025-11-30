@@ -4,7 +4,7 @@ import cors from 'cors';
 import { initializeDatabase, closeDatabase } from './db/index.js';
 import { compareSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
-import { generateRegistrationOptions, verifyRegistrationResponse } from '@simplewebauthn/server';
+import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
 
 export function createApp(models) {
   const app = express();
@@ -52,27 +52,7 @@ export function createApp(models) {
 
       if (!passwordMatches) return res.status(401).json({ error: 'Invalid credentials' });
 
-      // Create a simple token (replace with JWT or proper session management in production)
-      const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
-      // Set a secure HTTP-only cookie to mark the user as logged in
-      const cookieOptions = {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: process.env.NODE_ENV === 'production'
-          ? 7 * 24 * 60 * 60 * 1000 // 7 days
-          : 5 * 60 * 1000, // 5 minutes
-        path: '/',
-      };
-      res.cookie('session', token, cookieOptions);
-
-      const safeUser = {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-      };
-
-      return res.json({ token, user: safeUser });
+      return actionsAfterUserAuthentication(user, res);
     } catch (err) {
       console.error('Login error:', err);
       return res.status(500).json({ error: 'Internal server error' });
@@ -153,10 +133,12 @@ export function createApp(models) {
     }
 
     const passKeys = await models.PassKey.findAll({ where: { userId: user.id } });
-    const existingCredentials = passKeys.map(passKey => ({
-      id: passKey.credentialId,
-      transports: passKey.credentialTransports,
-    }));
+    const existingCredentials = passKeys
+      .filter(passKey => passKey.credentialId)
+      .map(passKey => ({
+        id: passKey.credentialId,
+        transports: passKey.credentialTransports,
+      }));
 
     console.log('Existing Credentials:', existingCredentials);
 
@@ -182,6 +164,7 @@ export function createApp(models) {
 
     const challenge = options.challenge;
 
+    // instead of storing it in a database we can store it in memory or use something like Redis with auto expiry
     const passKey = await models.PassKey.create({
       userId: user.id,
       challenge,
@@ -236,12 +219,141 @@ export function createApp(models) {
     return res.json({ success: true });
   });
 
+  app.post('/api/generate-authentication-challenge', async (req, res) => {
+    const email = req.body.email;
+    if (!email) {
+      return res.status(400).json({ error: 'Missing user identifier' });
+    }
+
+    const user = await models.User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const passKeys = await models.PassKey.findAll({ where: { userId: user.id } });
+    const existingCredentials = passKeys
+      .filter(passKey => !!passKey.credentialId)
+      .map(passKey => ({
+        id: passKey.credentialId,
+        transports: passKey.credentialTransports,
+      }));
+
+    if (existingCredentials.length === 0) {
+      return res.status(400).json({ error: 'No registered passkeys found for this user' });
+    }
+
+    const challengeOptions = await generateAuthenticationOptions({
+      timeout: 60000,
+      rpID: 'localhost',
+      allowCredentials: existingCredentials,
+      userVerification: 'required',
+    });
+
+    if (!challengeOptions || !challengeOptions.challenge) {
+      return res.status(500).json({ error: 'Failed to generate authentication options' });
+    }
+
+    const challenge = challengeOptions.challenge;
+
+    // instead of storing it in a database we can store it in memory or use something like Redis with auto expiry
+    const passKey = await models.PassKey.create({
+      userId: user.id,
+      challenge,
+    });
+
+    return res.json({ passKeyId: passKey.id, userId: user.id, options: challengeOptions });
+  });
+
+  app.post('/api/verify-passkey-authentication', async (req, res) => {
+    const { passKeyId, userId, assertionResponse, error } = req.body || {};
+
+    // there will be an error if user cancels
+    if (error) {
+      console.log('Passkey authentication error:', error);
+      await models.PassKey.destroy({ where: { id: passKeyId } });
+      return res.json({ error: 'Passkey authentication was cancelled or failed' });
+    }
+
+    if (!userId || !assertionResponse || !passKeyId) {
+      return res.status(400).json({ error: 'Missing userId or assertionResponse' });
+    }
+
+    const currentPassKey = await models.PassKey.findByPk(passKeyId);
+    if (!currentPassKey || currentPassKey.userId !== userId) {
+      return res.status(400).json({ error: 'Invalid PassKey record' });
+    }
+
+    const currentChallenge = currentPassKey.challenge;
+    // for login we only need the challenge, so delete the login passkey row as it's no longer needed
+    await models.PassKey.destroy({ where: { id: passKeyId } });
+
+    const authenticatedPasskey = await models.PassKey.findOne({ where: { userId, credentialId: assertionResponse.id } });
+    if (!authenticatedPasskey) {
+      return res.status(400).json({ error: 'No registered passkey found matching the assertion' });
+    }
+
+    let verification;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: assertionResponse,
+        expectedChallenge: currentChallenge, // Retrieve the challenge you sent to the client
+        expectedOrigin: 'http://localhost:5173',
+        expectedRPID: 'localhost',
+        credential: {
+          id: authenticatedPasskey.credentialId,
+          publicKey: Buffer.from(authenticatedPasskey.credentialPublicKey, 'base64'),
+          counter: authenticatedPasskey.credentialCounter,
+          transports: authenticatedPasskey.credentialTransports,
+        }
+      });
+    } catch (err) {
+      console.error('Error during passkey authentication verification:', err);
+      return res.status(500).json({ error: 'Internal server error during verification' });
+    }
+
+    if (!verification.verified) {
+      return res.status(400).json({ error: 'Passkey authentication verification failed' });
+    }
+
+    const { authenticationInfo } = verification;
+    const { newCounter } = authenticationInfo;
+    await authenticatedPasskey.update({
+      credentialCounter: newCounter,
+    });
+
+    return actionsAfterUserAuthentication(await models.User.findByPk(userId), res);
+  });
+
   // fallback 404 for other routes
   app.use((req, res) => {
     res.status(404).json({ error: 'Not Found' });
   });
 
   return app;
+
+  function actionsAfterUserAuthentication(user, res) {
+    // Create a simple token (replace with JWT or proper session management in production)
+    const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
+    // Set a secure HTTP-only cookie to mark the user as logged in
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: process.env.NODE_ENV === 'production'
+        ? 7 * 24 * 60 * 60 * 1000 // 7 days
+        : 5 * 60 * 1000, // 5 minutes
+      path: '/',
+    };
+    res.cookie('session', token, cookieOptions);
+
+    const safeUser = {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+    };
+
+    return res.json({ token, user: safeUser });
+  }
 }
 
 export async function startServer(port = process.env.PORT ? Number(process.env.PORT) : 3000) {

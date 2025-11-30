@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { isLoggedIn, loginByPassword as loginWithPassword } from '@/services/backendServices'
+import { handlePasskeyLogin } from '@/services/passkeyService'
 
 export const useUserStore = defineStore('user', () => {
   const loggedIn = ref(false)
@@ -25,5 +26,16 @@ export const useUserStore = defineStore('user', () => {
     return loggedIn.value;
   }
 
-  return { isUserLoggedIn, userData, checkLoginStatus, loginByPassword }
+  async function loginByPasskey(email) {
+    loggedIn.value = await handlePasskeyLogin(email).then(data => {
+      userData.value = data.user || null
+      return true;
+    }).catch(() => {
+      userData.value = null;
+      return false;
+    });
+    return loggedIn.value;
+  }
+
+  return { isUserLoggedIn, userData, checkLoginStatus, loginByPassword, loginByPasskey }
 });

@@ -37,3 +37,13 @@ export async function verifyPassKeyRegistration(userId, passKeyId, attestationRe
     const response = await apiClient.post('/verify-passkey-registration', { userId, passKeyId, attestationResponse, error });
     return response.data;
 }
+
+export async function getPasskeyAuthChallenge(email) {
+    const response = await apiClient.post('/generate-authentication-challenge', { email });
+    return response.data;
+}
+
+export async function verifyPasskeyAuth(userId, passKeyId, assertionResponse, error = false) {
+    const response = await apiClient.post('/verify-passkey-authentication', { userId, passKeyId, assertionResponse, error });
+    return response.data;
+}

@@ -18,6 +18,11 @@ const router = createRouter({
       component: () => import('../views/PasswordLoginView.vue'),
     },
     {
+      path: '/passkey-login',
+      name: 'passkey-login',
+      component: () => import('../views/PasskeyLoginView.vue'),
+    },
+    {
       path: '/health',
       name: 'health',
       component: () => import('../views/HealthView.vue'),

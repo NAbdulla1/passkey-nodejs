@@ -31,6 +31,12 @@ const router = createRouter({
       path: '/passkeys',
       name: 'passkeys',
       component: () => import('../views/PasskeysListView.vue'),
+    },
+    //404
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'NotFound',
+      component: () => import('../views/NotFoundView.vue'),
     }
   ],
 })

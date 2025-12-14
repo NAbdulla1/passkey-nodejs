@@ -7,12 +7,14 @@ import cookieParser from 'cookie-parser';
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
 import aaguids from './aaguid.json' with { type: 'json' };
 
+const origin = 'http://localhost:3000'; // change it to http://localhost:5173 for vite dev server
+
 export function createApp(models) {
   const app = express();
 
   // Enable CORS for all origins
   app.use(cors({
-    origin: 'http://localhost:5173',
+    origin: origin,
     credentials: true,
   }));
 
@@ -196,7 +198,7 @@ export function createApp(models) {
     const verification = await verifyRegistrationResponse({
       response: attestationResponse,
       expectedChallenge: passKey.challenge, // Retrieve the challenge you sent to the client
-      expectedOrigin: 'http://localhost:5173',
+      expectedOrigin: origin,
       expectedRPID: 'localhost',
     });
 
@@ -302,7 +304,7 @@ export function createApp(models) {
       verification = await verifyAuthenticationResponse({
         response: assertionResponse,
         expectedChallenge: currentChallenge, // Retrieve the challenge you sent to the client
-        expectedOrigin: 'http://localhost:5173',
+        expectedOrigin: origin,
         expectedRPID: 'localhost',
         credential: {
           id: authenticatedPasskey.credentialId,
@@ -362,9 +364,14 @@ export function createApp(models) {
       return res.json(passKeys);
   });
 
+  app.get('/assets/:assetName', (req, res) => {
+    const assetName = req.params.assetName;
+    res.sendFile(assetName, { root: process.cwd() + '/frontend-build/assets' });
+  });
+
   // fallback 404 for other routes
   app.use((req, res) => {
-    res.status(404).json({ error: 'Not Found' });
+    res.sendFile('frontend-build/index.html', { root: process.cwd() });
   });
 
   return app;

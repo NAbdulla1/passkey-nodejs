@@ -320,6 +320,8 @@ export function createApp(models) {
     await authenticatedPasskey.update({
       credentialCounter: newCounter,
     });
+    authenticatedPasskey.changed('updatedAt', true);
+    await authenticatedPasskey.save();
 
     return actionsAfterUserAuthentication(await models.User.findByPk(userId), res);
   });

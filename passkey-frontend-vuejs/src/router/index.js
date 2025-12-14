@@ -26,6 +26,11 @@ const router = createRouter({
       path: '/health',
       name: 'health',
       component: () => import('../views/HealthView.vue'),
+    },
+    {
+      path: '/passkeys',
+      name: 'passkeys',
+      component: () => import('../views/PasskeysListView.vue'),
     }
   ],
 })

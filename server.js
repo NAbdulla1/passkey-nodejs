@@ -324,6 +324,36 @@ export function createApp(models) {
     return actionsAfterUserAuthentication(await models.User.findByPk(userId), res);
   });
 
+  app.get('/api/passkeys', async (req, res) => {
+    const sessionCookie = req.cookies ? req.cookies['session'] : null;
+    if (!sessionCookie) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    let userId;
+    try {
+      const decoded = Buffer.from(sessionCookie, 'base64').toString('utf8');
+      const [idPart] = decoded.split(':');
+      userId = Number(idPart);
+      if (!Number.isFinite(userId)) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+    } catch (err) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    let passKeys = await models.PassKey.findAll({ where: { userId } });
+    passKeys = passKeys
+      .filter(passKey => !!passKey.credentialId)
+      .map(passKey => ({
+        id: passKey.id,
+        createdAt: passKey.createdAt,
+        lastUsedAt: passKey.updatedAt,
+      }));
+
+      return res.json(passKeys);
+  });
+
   // fallback 404 for other routes
   app.use((req, res) => {
     res.status(404).json({ error: 'Not Found' });

@@ -30,6 +30,7 @@ const handleLogout = () => {
         <RouterLink to="/">Home</RouterLink>
         <RouterLink v-if="!userStore.isUserLoggedIn" to="/password-login">Password Login</RouterLink>
         <RouterLink v-if="!userStore.isUserLoggedIn" to="/passkey-login">Passkey Login</RouterLink>
+        <RouterLink v-if="userStore.isUserLoggedIn" to="/passkeys">My Passkeys</RouterLink>
         <RouterLink to="/health">Health</RouterLink>
       </nav>
     </div>

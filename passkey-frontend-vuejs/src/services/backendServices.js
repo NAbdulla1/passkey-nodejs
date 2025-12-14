@@ -47,3 +47,11 @@ export async function verifyPasskeyAuth(userId, passKeyId, assertionResponse, er
     const response = await apiClient.post('/verify-passkey-authentication', { userId, passKeyId, assertionResponse, error });
     return response.data;
 }
+
+/**
+ * @returns {Promise<Array[{id: passKey.id, createdAt: passKey.createdAt, lastUsedAt: passKey.updatedAt}]>} List of registered passkeys for the logged-in user
+ */
+export async function getPassKeys() {
+    const response = await apiClient.get('/passkeys');
+    return response.data;
+}

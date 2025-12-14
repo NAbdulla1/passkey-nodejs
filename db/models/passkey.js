@@ -29,7 +29,8 @@ export default (sequelize, DataTypes) => {
     credentialPublicKey: DataTypes.TEXT,
     credentialTransports: DataTypes.JSON,
     credentialDeviceType: DataTypes.STRING,
-    credentialBackedUp: DataTypes.BOOLEAN
+    credentialBackedUp: DataTypes.BOOLEAN,
+    authenticatorName: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'PassKey',

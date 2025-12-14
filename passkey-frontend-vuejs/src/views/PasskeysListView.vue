@@ -49,6 +49,10 @@ onMounted(async () => {
           <div class="passkeys-list">
             <div v-for="passkey in passkeys" :key="passkey.id" class="passkey-item">
               <div class="passkey-info">
+                <h3>Authenticator Name</h3>
+                <p class="authenticator-name">{{ passkey.authenticatorName }}</p>
+              </div>
+              <div class="passkey-id-section">
                 <h3>Passkey ID</h3>
                 <p class="passkey-id">{{ passkey.id }}</p>
               </div>
@@ -123,6 +127,25 @@ h1 {
 }
 
 .passkey-info h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary, #666);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.authenticator-name {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.passkey-id-section {
+  margin-bottom: 1rem;
+}
+
+.passkey-id-section h3 {
   margin: 0 0 0.5rem 0;
   font-size: 0.875rem;
   color: var(--color-text-secondary, #666);

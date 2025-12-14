@@ -5,6 +5,7 @@ import { initializeDatabase, closeDatabase } from './db/index.js';
 import { compareSync } from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
+import aaguids from './aaguid.json' with { type: 'json' };
 
 export function createApp(models) {
   const app = express();
@@ -205,6 +206,9 @@ export function createApp(models) {
 
     const { registrationInfo } = verification;
 
+    const {aaguid} = registrationInfo;
+    const aaguidInfo = aaguids[aaguid];
+
     const { credential, credentialDeviceType, credentialBackedUp } = registrationInfo;
 
     await passKey.update({
@@ -213,7 +217,8 @@ export function createApp(models) {
       credentialPublicKey: Buffer.from(credential.publicKey).toString('base64'),
       credentialTransports: credential.transports,
       credentialDeviceType: credentialDeviceType,
-      credentialBackedUp: credentialBackedUp
+      credentialBackedUp: credentialBackedUp,
+      authenticatorName: aaguidInfo ? aaguidInfo.name : 'Unknown'
     });
 
     return res.json({ success: true });
@@ -349,6 +354,7 @@ export function createApp(models) {
       .filter(passKey => !!passKey.credentialId)
       .map(passKey => ({
         id: passKey.id,
+        authenticatorName: passKey.authenticatorName,
         createdAt: passKey.createdAt,
         lastUsedAt: passKey.updatedAt,
       }));

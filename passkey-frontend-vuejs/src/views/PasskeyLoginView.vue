@@ -28,7 +28,7 @@ const handleSubmit = async () => {
     <form @submit.prevent="handleSubmit">
       <div>
         <label for="email">Email:</label>
-        <input v-model="email" type="email" id="email" name="email" required />
+        <input v-model="email" type="email" id="email" name="email" required autocomplete="webauthn"/>
       </div>
       <button type="submit">Login</button>
     </form>

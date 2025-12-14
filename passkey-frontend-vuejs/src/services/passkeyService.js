@@ -20,7 +20,7 @@ export async function handlePasskeyLogin(email) {
     const  {passKeyId, userId, options} = await getPasskeyAuthChallenge(email);
     let data;
     try {
-        data = await startAuthentication({ optionsJSON: options });
+        data = await startAuthentication({ optionsJSON: options, useBrowserAutofill: true });
         const resp = await verifyPasskeyAuth(userId, passKeyId, data);
         return resp;
     } catch (error) {
